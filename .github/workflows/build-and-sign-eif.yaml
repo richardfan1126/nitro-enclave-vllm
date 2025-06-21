@@ -1,0 +1,55 @@
+---
+name: Build and sign EIF
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/**"
+      - "enclave/**"
+
+jobs:
+  build_and_sign_eif:
+    name: Build and sign EIF
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+
+    outputs:
+      digest: ${{ steps.build-eif.outputs.ghcr-artifact-digest }}
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      - name: Build EIF
+        id: build-eif
+        uses: richardfan1126/nitro-enclaves-eif-build-action@beta-github-attest
+        with:
+          docker-build-context-path: enclave
+          enable-ghcr-push: true
+          enable-artifact-sign: true
+          enable-github-attest: true
+          eif-file-name: enclave.eif
+          eif-info-file-name: enclave-info.json
+          artifact-tag: ${{ github.sha }}
+          save-pcrs-in-annotation: true
+
+  provenance:
+    needs: 
+      - build_and_sign_eif
+    permissions:
+      actions: read
+      id-token: write
+      packages: write
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.0.0
+    with:
+      image: ghcr.io/${{ github.repository }}
+      digest: sha256:${{ needs.build_and_sign_eif.outputs.digest }}
+      registry-username: ${{ github.actor }}
+    secrets:
+      registry-password: ${{ secrets.GITHUB_TOKEN }}
